@@ -19,7 +19,7 @@ jobs:
   conformance:
     permissions:
       contents: write
-    uses: ROBCOATVG/slipwai_v2_Fork/.github/workflows/package.yml@e4fc6f7c1c52bc7c720596e3de42dfbeccbcdef3
+    uses: ROBCOATVG/slipwai_v2_Fork/.github/workflows/package.yml@18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b
     with:
       package: aws
       kind: target
@@ -27,7 +27,7 @@ jobs:
       matrix: false
       toolchains: ''
       channel: 'ROBCOATVG/slipwai-index'
-      keel: 'git+https://github.com/ROBCOATVG/slipwai_v2_Fork@e4fc6f7c1c52bc7c720596e3de42dfbeccbcdef3'
+      keel: 'git+https://github.com/ROBCOATVG/slipwai_v2_Fork@18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
     secrets:
       chandlery_token: ${{ secrets.CHANDLERY_TOKEN }}
 
@@ -35,54 +35,130 @@ jobs:
   # package's declaration and protocol; it does not run the package's own tests, and it cannot — the suite
   # that validates a stack has to generate a real project, and the keel installs no language. That is what
   # `tests/test_stack.py` says when it skips: "a package's own CI (3.7)". Until this repository existed
-  # there was no such CI, so the one test that validates both deployment shapes against the real providers
-  # ran nowhere. It runs here.
+  # there was no such CI, so the cases that validate both deployment shapes against the real providers ran
+  # nowhere. They run here.
+  #
+  # **Where the packages live is not this job's choice.** `tests/checkout_packages.py` pins
+  # `SLIPWAI_LANGUAGES` to the keel checkout's own `packages/`, at import, whatever the environment said —
+  # so that directory is the one the suite reads, and a language installed anywhere else is a language the
+  # suite cannot see. The first version of this job installed one into `$GITHUB_WORKSPACE/packages`, which
+  # the pin then overrode: `installed("typescript")` was false, both stack cases skipped, and the job was
+  # green on nothing. Everything below assembles `keel/packages` deliberately:
+  #
+  #   aws              this checkout, symlinked in place of the keel's in-tree copy — the copy under test
+  #   azure            the other cloud, from the pinned keel, via `slipwai.package_sources`
+  #   typescript, go   published languages, installed from the chandlery
+  #
+  # `.package-sources` is a second checkout of the same pinned commit because `package_sources` reads its
+  # siblings out of a source checkout and verifies that checkout's own `git rev-parse HEAD` against the
+  # declared SHA — it cannot take them from the tree it is writing into.
   stacks:
     runs-on: ubuntu-latest
+    env:
+      PACKAGE_SOURCES_REPOSITORY: ROBCOATVG/slipwai_v2_Fork
+      PACKAGE_SOURCES_REF: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+      PACKAGE_SOURCES_NAMES: 'azure'
+      PACKAGE_UNDER_TEST: aws
+      SLIPWAI_LANGUAGES: ${{ github.workspace }}/keel/packages
     steps:
       - uses: actions/checkout@v6
         with:
-          path: packages/aws
+          path: package
       - uses: actions/checkout@v6
         with:
           repository: ROBCOATVG/slipwai_v2_Fork
-          ref: 'e4fc6f7c1c52bc7c720596e3de42dfbeccbcdef3'
+          ref: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
           path: keel
+      - uses: actions/checkout@v6
+        with:
+          repository: ROBCOATVG/slipwai_v2_Fork
+          ref: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+          path: .package-sources
+          persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
+      # The stacks are read by the real tool, against the real providers: `tofu init -backend=false`
+      # downloads each pinned provider and `tofu validate` is held to its schema. No Go toolchain is set
+      # up on purpose — what the suite needs is the `go` *package*, so that it can generate a Go project
+      # with `--skip-checks`; nothing here compiles one, and a toolchain nobody uses is a step that only
+      # has to be maintained.
       - uses: opentofu/setup-opentofu@v2
         with:
           tofu_version: '1.12.6'
-      # A real language, because a stack is validated by generating a project and a generated project
-      # needs one. Taken from the chandlery, not from a checkout: what is proved is what somebody installs.
-      # Every published language names BOTH clouds, so `language install` refuses while either target is
+      - name: Install the keel this package is built for
+        run: |
+          set -eu
+          python -m pip install --disable-pip-version-check ./keel
+          slipwai --version
+      - name: Validate the source sibling declaration
+        run: python -m slipwai.package_sources --validate
+      # Every published language names both clouds, so `language install` refuses while either target is
       # missing — "backend typescript answers target azure, which core does not declare". That is the
       # declaration working, not a bug: a language may not answer a target nothing declares. Until both
-      # targets are in the chandlery the sibling comes from the pinned keel checkout, which is what
+      # targets are in the chandlery the sibling comes from the pinned keel, which is what
       # `package_sources` is for and what it says it is for — CI topology before publication, never an
-      # installer fallback. **Delete this step once azure 1.0.0 is published**; the language install
-      # below then resolves it from the channel like anybody else's.
-      - name: Source the sibling target this language names
-        env:
-          PACKAGE_SOURCES_REPOSITORY: ROBCOATVG/slipwai_v2_Fork
-          PACKAGE_SOURCES_REF: 'e4fc6f7c1c52bc7c720596e3de42dfbeccbcdef3'
-          PACKAGE_SOURCES_NAMES: 'azure'
-          PACKAGE_UNDER_TEST: aws
+      # installer fallback. **Delete the exposure once azure 1.0.0 is published**; the install below
+      # then resolves it from the channel like anybody else's.
+      - name: Pin the package directory to this checkout, beside the sibling from the pinned keel
         run: |
-          python -m pip install ./keel
-          python -m slipwai.package_sources --source keel --destination packages
-      - name: Install a published language beside this package
-        env:
-          SLIPWAI_LANGUAGES: ${{ github.workspace }}/packages
-        run: python -m slipwai language install typescript
+          set -eu
+          rm -rf keel/packages/aws keel/packages/azure
+          ln -s "$GITHUB_WORKSPACE/package" keel/packages/aws
+          python -m slipwai.package_sources --source .package-sources --destination keel/packages
+          ls -l keel/packages
+      # Real languages, because a stack is validated by generating a project and a generated project needs
+      # one. Taken from the chandlery, not from a checkout: what is proved is what somebody installs. Both,
+      # and not just one — `test_stack.py` runs only where `go` and `typescript` are both there, because it
+      # validates the minimal variant in Go and every other variant in TypeScript.
+      - name: Install the published languages the suite generates with
+        run: |
+          set -eu
+          python -m slipwai language install typescript
+          python -m slipwai language install go
       - name: Validate every shape and variant against the pinned providers
-        env:
-          SLIPWAI_LANGUAGES: ${{ github.workspace }}/packages
+        working-directory: keel
         run: |
-          cd keel
-          PYTHONPATH="src:tests:$GITHUB_WORKSPACE/packages/aws" \
-            python -m unittest discover -s "$GITHUB_WORKSPACE/packages/aws/tests" -p 'test_*.py' -v
+          set -eu
+          PYTHONPATH="src:tests:$GITHUB_WORKSPACE/package" python - \
+            "$GITHUB_WORKSPACE/package/tests" \
+            test_stack.AwsStackTest.test_a_skiff_with_a_browser_app_validates_against_the_real_provider \
+            test_stack.AwsStackTest.test_every_stack_validates_against_the_real_provider_before_and_after_a_prune \
+            <<'PY'
+          """Run this package's own suite, and fail unless the named stack cases actually ran.
+
+          A skip is this job's one real failure mode. `test_stack.py` skips the whole class unless both
+          language packages are in the pinned directory, and every case it holds is a shape validated
+          against a real provider — so a run that skips them is a green job that proved nothing, which is
+          worse than a red one. Named cases rather than a count: a rename should fail loudly here, not
+          quietly stop being checked.
+          """
+          import sys
+          import unittest
+
+          start, *required = sys.argv[1:]
+          started: set[str] = set()
+
+
+          class Started(unittest.TextTestResult):
+              def startTest(self, test: unittest.TestCase) -> None:
+                  started.add(test.id())
+                  super().startTest(test)
+
+
+          suite = unittest.defaultTestLoader.discover(start, pattern="test_*.py")
+          result = unittest.TextTestRunner(verbosity=2, resultclass=Started).run(suite)
+
+          skipped = sorted(f"{case.id()}: {why}" for case, why in result.skipped)
+          missing = sorted(name for name in required if name not in started)
+          for line in skipped:
+              print(f"::error::a skipped case proves nothing here: {line}")
+          for name in missing:
+              print(f"::error::the suite never ran {name}")
+          print(f"ran {len(started)} case(s), {len(skipped)} skipped; "
+                f"{len(required) - len(missing)} of {len(required)} required case(s) present")
+          sys.exit(1 if skipped or missing or not result.wasSuccessful() else 0)
+          PY
