@@ -1,0 +1,74 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+    # A tag is what publishes. A green run on `main` is a package that works; it is not a package
+    # anybody asked for, and publishing every commit is how a chandlery fills with versions nobody
+    # chose. `git tag v1.1.0 && git push --follow-tags` is the whole of releasing.
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# A called workflow cannot ask for more than its caller has, and the publish job attaches the release to
+# this repository's own tag — so the permission is granted here or that job never starts.
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    permissions:
+      contents: write
+    uses: ROBCOATVG/slipwai_v2_Fork/.github/workflows/package.yml@e4fc6f7c1c52bc7c720596e3de42dfbeccbcdef3
+    with:
+      package: aws
+      kind: target
+      # A target's matrix is a language's; this package names no toolchain and generates no variant.
+      matrix: false
+      toolchains: ''
+      channel: 'ROBCOATVG/slipwai-index'
+      keel: 'git+https://github.com/ROBCOATVG/slipwai_v2_Fork@e4fc6f7c1c52bc7c720596e3de42dfbeccbcdef3'
+    secrets:
+      chandlery_token: ${{ secrets.CHANDLERY_TOKEN }}
+
+  # **The stacks, held to the real providers.** `package.yml` runs the conformance suite, which reads this
+  # package's declaration and protocol; it does not run the package's own tests, and it cannot — the suite
+  # that validates a stack has to generate a real project, and the keel installs no language. That is what
+  # `tests/test_stack.py` says when it skips: "a package's own CI (3.7)". Until this repository existed
+  # there was no such CI, so the one test that validates both deployment shapes against the real providers
+  # ran nowhere. It runs here.
+  stacks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: packages/aws
+      - uses: actions/checkout@v6
+        with:
+          repository: ROBCOATVG/slipwai_v2_Fork
+          ref: 'e4fc6f7c1c52bc7c720596e3de42dfbeccbcdef3'
+          path: keel
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: '1.12.6'
+      # A real language, because a stack is validated by generating a project and a generated project
+      # needs one. Taken from the chandlery, not from a checkout: what is proved is what somebody installs.
+      - name: Install the keel and a published language beside this package
+        env:
+          SLIPWAI_LANGUAGES: ${{ github.workspace }}/packages
+        run: |
+          python -m pip install ./keel
+          python -m slipwai language install typescript
+      - name: Validate every shape and variant against the pinned providers
+        env:
+          SLIPWAI_LANGUAGES: ${{ github.workspace }}/packages
+        run: |
+          cd keel
+          PYTHONPATH="src:tests:$GITHUB_WORKSPACE/packages/aws" \
+            python -m unittest discover -s "$GITHUB_WORKSPACE/packages/aws/tests" -p 'test_*.py' -v
