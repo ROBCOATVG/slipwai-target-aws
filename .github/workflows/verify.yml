@@ -59,12 +59,26 @@ jobs:
           tofu_version: '1.12.6'
       # A real language, because a stack is validated by generating a project and a generated project
       # needs one. Taken from the chandlery, not from a checkout: what is proved is what somebody installs.
-      - name: Install the keel and a published language beside this package
+      # Every published language names BOTH clouds, so `language install` refuses while either target is
+      # missing — "backend typescript answers target azure, which core does not declare". That is the
+      # declaration working, not a bug: a language may not answer a target nothing declares. Until both
+      # targets are in the chandlery the sibling comes from the pinned keel checkout, which is what
+      # `package_sources` is for and what it says it is for — CI topology before publication, never an
+      # installer fallback. **Delete this step once azure 1.0.0 is published**; the language install
+      # below then resolves it from the channel like anybody else's.
+      - name: Source the sibling target this language names
         env:
-          SLIPWAI_LANGUAGES: ${{ github.workspace }}/packages
+          PACKAGE_SOURCES_REPOSITORY: ROBCOATVG/slipwai_v2_Fork
+          PACKAGE_SOURCES_REF: 'e4fc6f7c1c52bc7c720596e3de42dfbeccbcdef3'
+          PACKAGE_SOURCES_NAMES: 'azure'
+          PACKAGE_UNDER_TEST: aws
         run: |
           python -m pip install ./keel
-          python -m slipwai language install typescript
+          python -m slipwai.package_sources --source keel --destination packages
+      - name: Install a published language beside this package
+        env:
+          SLIPWAI_LANGUAGES: ${{ github.workspace }}/packages
+        run: python -m slipwai language install typescript
       - name: Validate every shape and variant against the pinned providers
         env:
           SLIPWAI_LANGUAGES: ${{ github.workspace }}/packages
