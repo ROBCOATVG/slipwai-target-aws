@@ -96,13 +96,20 @@ jobs:
           slipwai --version
       - name: Validate the source sibling declaration
         run: python -m slipwai.package_sources --validate
-      # Every published language names both clouds, so `language install` refuses while either target is
-      # missing — "backend typescript answers target azure, which core does not declare". That is the
-      # declaration working, not a bug: a language may not answer a target nothing declares. Until both
-      # targets are in the chandlery the sibling comes from the pinned keel, which is what
-      # `package_sources` is for and what it says it is for — CI topology before publication, never an
-      # installer fallback. **Delete the exposure once azure 1.0.0 is published**; the install below
-      # then resolves it from the channel like anybody else's.
+      # The directory the suite reads holds both clouds the pinned keel declares, not just this one. The
+      # sibling comes from that keel through `slipwai.package_sources`, which is what it is for and what
+      # it says it is for — CI topology before publication, never an installer fallback.
+      #
+      # It is **not** what makes the cases below run, and the comment this replaced said it was: the
+      # claim was that every published language names both clouds, so `language install` refuses while
+      # either target is missing. That was true once and is not true now — a cloud you have not
+      # installed stopped being a broken language, and `language install typescript` was checked here
+      # against a directory holding no target at all and against one holding only aws. Both
+      # installed, and the whole suite passes with azure removed. What the exposure keeps true is
+      # narrower and still worth keeping: the catalogue the suite reads is the catalogue the keel
+      # declares, so a case that comes to depend on the other cloud fails here rather than quietly
+      # testing half of one. **Delete it once azure 1.0.0 is published**, and install it from the
+      # channel like anybody else's.
       - name: Pin the package directory to this checkout, beside the sibling from the pinned keel
         run: |
           set -eu
