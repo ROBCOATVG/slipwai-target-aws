@@ -26,12 +26,19 @@ from slipwai.target_protocol import (
     PREREQUISITES,
     README_WORDS,
     REGION,
-    SETUP,
     SCRIPTS,
     SHAPES,
     TOOLS,
     Target,
 )
+
+# `setup` — the hook `./init` runs first — arrived in the keel's protocol with slipwai 2.0.0.dev2. Imported
+# on its own so this package still loads on the keel before it: there the hook is simply not offered and
+# `./init` names what is missing, as it always did, rather than the whole target refusing to import.
+try:
+    from slipwai.target_protocol import SETUP
+except ImportError:  # pragma: no cover - a keel older than the member
+    SETUP = None
 
 from .docs import deployment_diagram, production_adr
 
@@ -241,7 +248,7 @@ TARGET = Target(
         AGENT_RULES: RULES,
         ADD_COMMANDS: AFTERWARDS,
         REGION: WHERE,
-        SETUP: 'scripts/setup.py',
+        **({SETUP: 'scripts/setup.py'} if SETUP is not None else {}),
         PREREQUISITES: BEFORE_INIT,
         FLAG_TRANSPORTS: TRANSPORTS,
     },
