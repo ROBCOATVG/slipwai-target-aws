@@ -26,6 +26,7 @@ from slipwai.target_protocol import (
     PREREQUISITES,
     README_WORDS,
     REGION,
+    SETUP,
     SCRIPTS,
     SHAPES,
     TOOLS,
@@ -58,6 +59,7 @@ STACKS = {'bootstrap': ('bootstrap/main.tf', 'bootstrap/outputs.tf', 'bootstrap/
 #: What a generated project gets under `scripts/`, by the path it lands at. These run inside a project,
 #: which has no slipwai to import: the standard library only.
 PROJECT_SCRIPTS = {'scripts/bootstrap.py': 'scripts/bootstrap.py',
+    'scripts/setup.py': 'scripts/setup.py',
     'scripts/check-deploy-role.py': 'scripts/check-deploy-role.py',
     'scripts/check-flags.py': 'scripts/check-flags.py',
     'scripts/deploy.py': 'scripts/deploy.py'}
@@ -99,11 +101,13 @@ SECTION_WORDS = {'runtime': 'one ECS service per application deployed blue/green
 
 #: The *Before `./init`* table's middle rows: what AWS in particular asks of the machine that runs the
 #: first day's work. The rows around them are the same wherever a project deploys.
-BEFORE_INIT = (('**OpenTofu 1.12**, on the PATH as `tofu`', '`tofu version`'),
+BEFORE_INIT = (('**OpenTofu 1.12**, on the PATH as `tofu` — `./init` installs it where it is missing (`scripts/setup.py`)',
+    '`tofu version`'),
     ('**The AWS CLI, signed in as an administrator** of the account this project will live in — a profile, SSO or '
     'environment variables, whatever the CLI finds; `AWS_PROFILE=<admin profile> ./init` is the usual spelling',
     '`aws sts get-caller-identity` names that account'),
-    ('**A region**: `export AWS_REGION=eu-west-2`, or `aws configure set region eu-west-2`',
+    ('**A region**: `export AWS_REGION=eu-west-2`, or `aws configure set region eu-west-2` — asked by `./init`, '
+    'offering `eu-west-2`, where neither says',
     '`aws configure get region`'))
 
 #: What a destination puts whoever works here under. Naming the cloud is what makes it land: "no service
@@ -237,6 +241,7 @@ TARGET = Target(
         AGENT_RULES: RULES,
         ADD_COMMANDS: AFTERWARDS,
         REGION: WHERE,
+        SETUP: 'scripts/setup.py',
         PREREQUISITES: BEFORE_INIT,
         FLAG_TRANSPORTS: TRANSPORTS,
     },
