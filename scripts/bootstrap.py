@@ -33,8 +33,11 @@ What it decides for you, and how:
   production yet. From `AUTO_PROMOTE=`/`--auto-promote`, else `infra/auto-promote` — the answer a previous
   run wrote down; else, in a terminal, it asks once and writes that file. Written to the forge as the
   `AUTO_PROMOTE` variable, which is the only thing `deploy.yml` reads to decide.
-- **The passphrase** encrypting the committed bootstrap state: `TF_VAR_state_passphrase` if set; otherwise a
-  new one is generated for a first run and printed once — keep it, nothing else ever knows it.
+- **The passphrase** encrypting the committed bootstrap state: `TF_VAR_state_passphrase` if set; else, where
+  the state already exists, read back from the account — the stack keeps it as the SSM parameter
+  `/<project>/bootstrap/state-passphrase`, a SecureString that only a signed-in identity allowed
+  `ssm:GetParameter` on it can read; otherwise a new one is generated for a first run, printed once, and
+  kept there by the apply. Keep the printed copy too: an account that is closed takes the parameter with it.
 - **The repository's configuration**: variables (identifiers) and, on a forge without OIDC, secrets (the key),
   written with `gh` on GitHub and the REST API on Gitea (`GITEA_TOKEN`, or `--token`). On GitHub it also
   creates the `staging` and `production` environments the deploy workflows name, each deployable from `main`
@@ -59,6 +62,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STACK = ROOT / "infra/bootstrap"
 STATE = STACK / "terraform.tfstate"
+# Where the account keeps the passphrase: a SecureString parameter the bootstrap stack writes, so a later
+# `make bootstrap` — after `add-service`, or from somebody else's laptop — reads it back rather than asking
+# a person to find it. Named after the project the way every resource is.
+PASSPHRASE_PARAMETER = "/{project}/bootstrap/state-passphrase"
 # Where the region is remembered once it has been decided, so it is asked once, not on every verb.
 REGION_FILE = ROOT / "infra/region"
 # The same, for whether a green commit is promoted to production by itself. Committed like the region, so a
@@ -233,15 +240,40 @@ def auto_promote(given: str | None, ask: bool) -> str:
     return found
 
 
-def passphrase() -> tuple[str, bool]:
+def project_name() -> str:
+    """The project's name, from the tfvars the stack reads it from."""
+    return str(json.loads((STACK / "project.auto.tfvars.json").read_text(encoding="utf-8"))["project"])
+
+
+def parameter_name() -> str:
+    return PASSPHRASE_PARAMETER.format(project=project_name())
+
+
+def kept_passphrase(env: dict) -> str | None:
+    """The passphrase the account keeps, or nothing where it has none — a project bootstrapped before the
+    stack kept one, or a sign-in that may not read it — so the caller can say what to do instead."""
+    found = subprocess.run(
+        ["aws", "ssm", "get-parameter", "--name", parameter_name(), "--with-decryption",
+         "--query", "Parameter.Value", "--output", "text"],
+        text=True, capture_output=True, env=env,
+    )
+    return found.stdout.strip() or None if found.returncode == 0 else None
+
+
+def passphrase(env: dict) -> tuple[str, bool]:
     """The state passphrase, and whether it was made just now."""
     given = os.environ.get("TF_VAR_state_passphrase")
     if given:
         return given, False
     if STATE.exists():
+        kept = kept_passphrase(env)
+        if kept:
+            print(f"passphrase read back from the account ({parameter_name()})", file=sys.stderr)
+            return kept, False
         raise Failure(
-            "infra/bootstrap/terraform.tfstate exists and is encrypted: set TF_VAR_state_passphrase to the "
-            "passphrase it was created with before running again"
+            "infra/bootstrap/terraform.tfstate exists and is encrypted, and the account has no readable copy of "
+            f"its passphrase at {parameter_name()}: set TF_VAR_state_passphrase to the passphrase it was created "
+            "with before running again"
         )
     return secrets.token_urlsafe(32), True
 
@@ -294,6 +326,7 @@ def outputs(env: dict) -> dict:
 # in a worse place than a refusal does.
 NEEDED_ACTIONS = [
     "s3:CreateBucket",
+    "ssm:PutParameter",
     "iam:CreateRole",
     "iam:CreateUser",
     "iam:CreateOpenIDConnectProvider",
@@ -597,7 +630,10 @@ def plan(decision: dict) -> None:
     print("configure    variables " + ", ".join([*VARIABLES, PROMOTE_VARIABLE]) + (" and secrets " + ", ".join(SECRETS) if key else ""))
     if decision["forge"] == "github":
         print("environments " + " and ".join(ENVIRONMENTS) + f", each deploying from {DEPLOY_BRANCH} only")
-    print("passphrase   " + ("TF_VAR_state_passphrase, as set" if os.environ.get("TF_VAR_state_passphrase") else "generated now and printed once" if not STATE.exists() else "REQUIRED: the state exists and TF_VAR_state_passphrase is not set"))
+    print("passphrase   " + (
+        "TF_VAR_state_passphrase, as set" if os.environ.get("TF_VAR_state_passphrase")
+        else f"generated now, printed once and kept in the account at {parameter_name()}" if not STATE.exists()
+        else f"read back from the account ({parameter_name()}); TF_VAR_state_passphrase overrides it"))
 
 
 def bootstrap(args: argparse.Namespace) -> None:
@@ -612,16 +648,19 @@ def bootstrap(args: argparse.Namespace) -> None:
     identity = json.loads(run(["aws", "sts", "get-caller-identity", "--output", "json"], capture=True))
     print(f"account {identity['Account']} as {identity['Arn']}, region {decision['region']}", file=sys.stderr)
     check_permissions(identity, decision["deploy_with"])
-    phrase, fresh = passphrase()
+    env = {**os.environ, "AWS_REGION": decision["region"]}
+    phrase, fresh = passphrase(env)
     if fresh:
         # Before the apply, not after: a failed first apply still writes an encrypted state, and a passphrase
         # only shown on success would be one nobody has.
         print(
-            f"\nThe committed bootstrap state will be encrypted with a passphrase generated now. Keep it — it is "
-            f"what every later `make bootstrap` needs, and nothing else knows it:\n  TF_VAR_state_passphrase={phrase}\n",
+            f"\nThe committed bootstrap state will be encrypted with a passphrase generated now. The apply keeps "
+            f"it in the account as the SSM parameter {parameter_name()}, and a later `make bootstrap` signed in "
+            f"there reads it back. Keep this copy too — an account that is closed takes the parameter with it:\n"
+            f"  TF_VAR_state_passphrase={phrase}\n",
             file=sys.stderr,
         )
-    env = {**os.environ, "AWS_REGION": decision["region"], "TF_VAR_state_passphrase": phrase}
+    env["TF_VAR_state_passphrase"] = phrase
     subject_prefix = github_subject_prefix(decision["repository"]) if decision["forge"] == "github" else ""
     run(["tofu", f"-chdir={STACK}", "init", "-input=false"], env=env)
     run([
@@ -651,7 +690,8 @@ def bootstrap(args: argparse.Namespace) -> None:
             print(f"  secret   {name} = (from `tofu -chdir=infra/bootstrap output -raw {SECRETS[name]}`)")
     print("\nbootstrapped. Now:")
     if fresh:
-        print(f"  1. Keep the passphrase printed above (TF_VAR_state_passphrase={phrase}); it decrypts the state.")
+        print(f"  1. Keep the passphrase printed above (TF_VAR_state_passphrase={phrase}); the account keeps it at "
+              f"{parameter_name()}, and this is the copy for the day it cannot.")
     print(
         "  2. git add infra/bootstrap/terraform.tfstate infra/bootstrap/.terraform.lock.hcl infra/region "
         "infra/auto-promote && git commit"

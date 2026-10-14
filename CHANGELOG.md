@@ -3,6 +3,18 @@
 No releases yet. Release notes are recorded here newest first, one entry per released version; the entry being
 written is `changelog.d/`.
 
+## 1.2.0 — MINOR
+
+**The account keeps the passphrase that decrypts the committed bootstrap state.** The first `make bootstrap`
+still generates one and prints it once, and the apply now keeps it as the SSM SecureString parameter
+`/<project>/bootstrap/state-passphrase`. A later `make bootstrap` — after `add-service`, or from somebody
+else's laptop — signed in to the account reads it back, and `TF_VAR_state_passphrase` still overrides it.
+Whoever may read the parameter may decrypt the state, which is the trust the encrypted state already assumed.
+The identity bootstrapping needs `ssm:PutParameter` now, and the pre-apply permission check asks for it.
+
+**Catch-up:** `make bootstrap` once, with `TF_VAR_state_passphrase` set as before: that apply writes the
+parameter, and the next run needs nothing.
+
 ## 1.1.0 — MINOR
 
 **`./init` installs what bootstrapping AWS needs, through this package's own setup script.** The

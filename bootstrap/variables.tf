@@ -26,7 +26,7 @@ variable "deploy_with" {
 }
 
 variable "state_passphrase" {
-  description = "Encrypts this stack's committed state. Keep it in a password manager; without it the state file is unreadable."
+  description = "Encrypts this stack's committed state. The apply keeps it in the account as an SSM SecureString parameter, and `make bootstrap` reads it back from there; keep the printed copy for the day the account cannot."
   type        = string
   sensitive   = true
 

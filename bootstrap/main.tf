@@ -5,9 +5,10 @@
 # script decides for you.
 #
 # Its own state is committed to this repository, encrypted with OpenTofu's native state encryption under a
-# passphrase the script generates once and prints, so there is no imperative "create the bucket first" step
-# and nothing to bootstrap the bootstrap. Without the passphrase the file is noise; with it, `tofu output`
-# here is the source of every identifier the pipeline is configured with.
+# passphrase the script generates once and prints — and which the account then keeps (the parameter below)
+# — so there is no imperative "create the bucket first" step and nothing to bootstrap the bootstrap. Without
+# the passphrase the file is noise; with it, `tofu output` here is the source of every identifier the
+# pipeline is configured with.
 
 terraform {
   required_version = ">= 1.12.0"
@@ -108,6 +109,19 @@ resource "aws_s3_bucket_lifecycle_configuration" "state" {
       noncurrent_days = 30
     }
   }
+}
+
+# ── The passphrase ─────────────────────────────────────────────────────────────────────────────────────
+
+# The one thing the committed state cannot carry is the passphrase that decrypts it, so the account carries
+# it: a SecureString parameter, encrypted at rest under the account's AWS-managed key, that `make bootstrap`
+# reads back whenever `TF_VAR_state_passphrase` is unset. Whoever may read it may decrypt the bootstrap
+# state — the identities that could have applied this stack, and nobody else. An account that is closed
+# takes it with it, which is why the script still prints the passphrase once.
+resource "aws_ssm_parameter" "state_passphrase" {
+  name  = "/${var.project}/bootstrap/state-passphrase"
+  type  = "SecureString"
+  value = var.state_passphrase
 }
 
 # ── Who the pipeline is ────────────────────────────────────────────────────────────────────────────────
