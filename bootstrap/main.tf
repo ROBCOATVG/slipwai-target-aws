@@ -147,11 +147,21 @@ locals {
   subject_prefix = var.oidc_subject_prefix != "" ? var.oidc_subject_prefix : "repo:${var.repository}"
 }
 
+# An account holds one OIDC provider per issuer URL, and GitHub's is the same URL for every project: the
+# second project bootstrapped into an account met `EntityAlreadyExists` here. So the provider is created
+# only where the account has none, and otherwise the one it has is named — found by `make bootstrap`, which
+# also makes sure a project whose state already owns the provider keeps owning it rather than being told to
+# reuse itself and destroy it. A reused provider is never in this project's state, which is the point: a
+# `destroy` of one project must not take down the trust every other project in the account signs in with.
 resource "aws_iam_openid_connect_provider" "github" {
-  count = local.oidc ? 1 : 0
+  count = local.oidc && var.github_oidc_provider_arn == "" ? 1 : 0
 
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
+}
+
+locals {
+  github_oidc_arn = var.github_oidc_provider_arn != "" ? var.github_oidc_provider_arn : one(aws_iam_openid_connect_provider.github[*].arn)
 }
 
 resource "aws_iam_user" "deploy" {
@@ -196,7 +206,7 @@ data "aws_iam_policy_document" "deploy_trust" {
 
       principals {
         type        = "Federated"
-        identifiers = [aws_iam_openid_connect_provider.github[0].arn]
+        identifiers = [local.github_oidc_arn]
       }
 
       condition {

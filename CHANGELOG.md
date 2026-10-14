@@ -3,6 +3,19 @@
 No releases yet. Release notes are recorded here newest first, one entry per released version; the entry being
 written is `changelog.d/`.
 
+## 1.2.1 — PATCH
+
+**A second project in the same account reuses the account's GitHub OIDC provider instead of failing to
+create it.** An account holds one provider per issuer URL, and GitHub's is the same URL for every project, so
+the second `make bootstrap` into an account ended in `EntityAlreadyExists` on
+`aws_iam_openid_connect_provider.github`. The script now looks the provider up and hands the stack its ARN;
+the stack creates one only where the account has none. A reused provider is never in the project's state,
+so tearing one project down leaves every other project's trust standing — and a project whose state already
+owns the provider keeps owning it rather than being told to reuse, and destroy, itself. The pre-apply
+permission check no longer asks for `iam:CreateOpenIDConnectProvider` when nothing will be created.
+
+**Catch-up:** `slipwai migrate`, then `make bootstrap` again where it stopped.
+
 ## 1.2.0 — MINOR
 
 **The account keeps the passphrase that decrypts the committed bootstrap state.** The first `make bootstrap`

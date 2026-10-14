@@ -14,6 +14,12 @@ variable "oidc_subject_prefix" {
   default     = ""
 }
 
+variable "github_oidc_provider_arn" {
+  description = "The account's existing GitHub OIDC provider, where it has one. An account holds one provider per issuer URL, so a second project in the same account reuses the first's rather than failing to create it again — and never owns it, so tearing one project down leaves every other's trust standing. Found by `make bootstrap`; empty means create one."
+  type        = string
+  default     = ""
+}
+
 variable "deploy_with" {
   description = "How the pipeline becomes the deploy role: `oidc` (GitHub, no stored credential) or `access-key` (a forge without OIDC federation, such as Gitea). Decided by `make bootstrap` from the remote."
   type        = string

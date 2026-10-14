@@ -25,6 +25,10 @@ What it decides for you, and how:
 - **Which forge.** From the remote: `github.com` means the pipeline signs in with a short-lived OIDC token and
   no stored credential; any other host is treated as Gitea (or a forge without OIDC federation), which gets
   an IAM user whose only permission is to assume the deploy role, its key stored as repository secrets.
+- **The GitHub OIDC provider.** An account holds one per issuer URL, so where the account already has
+  GitHub's it is reused rather than created again — unless this project's own state already owns it, in
+  which case it keeps owning it. A reused provider is never in this project's state: tearing one project
+  down leaves every other project's trust standing.
 - **Whether to auto-promote to production.** `true` — every commit that passes `verify` on `main` goes to
   staging and then straight on to production, which is the default and what this project was designed
   around. `false` — staging still deploys on every green push, and production moves only when somebody runs
@@ -344,14 +348,58 @@ def principal_arn(identity: dict) -> str:
     return arn
 
 
-def check_permissions(identity: dict, deploy_with: str) -> None:
+GITHUB_ISSUER = "token.actions.githubusercontent.com"
+#: The provider's address in this stack, as `tofu state list` prints it.
+PROVIDER_ADDRESS = "aws_iam_openid_connect_provider.github"
+
+
+def existing_github_provider(env: dict) -> str | None:
+    """The account's GitHub OIDC provider, or nothing where it has none — or where the CLI cannot say."""
+    found = subprocess.run(["aws", "iam", "list-open-id-connect-providers", "--output", "json"],
+                           text=True, capture_output=True, env=env)
+    if found.returncode != 0:
+        return None
+    try:
+        rows = json.loads(found.stdout or "{}").get("OpenIDConnectProviderList", [])
+    except ValueError:
+        return None
+    return next((str(row["Arn"]) for row in rows if str(row.get("Arn", "")).endswith(f"/{GITHUB_ISSUER}")), None)
+
+
+def owns_github_provider(env: dict) -> bool:
+    """Whether this project's own state already holds the provider — a first project, bootstrapped before
+    the account had one. Told to reuse the account's, the apply would destroy its own and every trust in
+    the account with it, so such a project keeps creating (which is to say keeping) it."""
+    if not STATE.exists():
+        return False
+    listed = subprocess.run(["tofu", f"-chdir={STACK}", "state", "list"], text=True, capture_output=True, env=env)
+    return listed.returncode == 0 and any(line.strip().startswith(PROVIDER_ADDRESS) for line in listed.stdout.splitlines())
+
+
+def reused_provider(deploy_with: str, env: dict) -> str:
+    """The provider ARN the apply is told to reuse, or empty where it creates — or keeps — its own."""
+    if deploy_with != "oidc":
+        return ""
+    existing = existing_github_provider(env)
+    if not existing:
+        return ""
+    if owns_github_provider(env):
+        print(f"this project's state owns the account's GitHub OIDC provider ({existing}); kept, as before",
+              file=sys.stderr)
+        return ""
+    print(f"the account already has a GitHub OIDC provider ({existing}): reused, not created, and not this "
+          f"project's to destroy", file=sys.stderr)
+    return existing
+
+
+def check_permissions(identity: dict, deploy_with: str, creating_provider: bool = True) -> None:
     """Refuse before the apply when the caller cannot create what the stack creates.
 
     A simulation the caller is not allowed to run is not a denial: the check is skipped with a note, and the
     apply says what it finds.
     """
     actions = [a for a in NEEDED_ACTIONS if not (a == "iam:CreateUser" and deploy_with != "access-key")
-               and not (a == "iam:CreateOpenIDConnectProvider" and deploy_with != "oidc")]
+               and not (a == "iam:CreateOpenIDConnectProvider" and (deploy_with != "oidc" or not creating_provider))]
     result = subprocess.run(
         ["aws", "iam", "simulate-principal-policy", "--policy-source-arn", principal_arn(identity),
          "--action-names", *actions, "--output", "json"],
@@ -621,7 +669,7 @@ def plan(decision: dict) -> None:
     print(f"repository   {decision['repository']} on {decision['forge']} ({where})")
     print(f"region       {decision['region'] or '(unset: export AWS_REGION, or `aws configure set region`)'}")
     print(f"pipeline     {'signs in with an OIDC token; no credential is stored' if not key else 'signs in with an IAM user key, stored as repository secrets, and assumes the deploy role'}")
-    print("apply        infra/bootstrap: state bucket, deploy role, image repositories" + (", the deploy user and its key" if key else ", the GitHub OIDC trust"))
+    print("apply        infra/bootstrap: state bucket, deploy role, image repositories" + (", the deploy user and its key" if key else ", the GitHub OIDC trust — on the provider the account already has, or one created for it"))
     print(f"auto-promote {decision['auto_promote']}: " + (
         "every commit that passes verify on main is deployed to staging and then production"
         if decision["auto_promote"] == "true"
@@ -647,8 +695,9 @@ def bootstrap(args: argparse.Namespace) -> None:
         raise Failure("no region: export AWS_REGION, `aws configure set region <region>`, or write it to infra/region")
     identity = json.loads(run(["aws", "sts", "get-caller-identity", "--output", "json"], capture=True))
     print(f"account {identity['Account']} as {identity['Arn']}, region {decision['region']}", file=sys.stderr)
-    check_permissions(identity, decision["deploy_with"])
     env = {**os.environ, "AWS_REGION": decision["region"]}
+    check_permissions(identity, decision["deploy_with"],
+                      creating_provider=existing_github_provider(env) is None)
     phrase, fresh = passphrase(env)
     if fresh:
         # Before the apply, not after: a failed first apply still writes an encrypted state, and a passphrase
@@ -663,10 +712,13 @@ def bootstrap(args: argparse.Namespace) -> None:
     env["TF_VAR_state_passphrase"] = phrase
     subject_prefix = github_subject_prefix(decision["repository"]) if decision["forge"] == "github" else ""
     run(["tofu", f"-chdir={STACK}", "init", "-input=false"], env=env)
+    # After `init` and with the passphrase in the environment, because the one question this answers that
+    # the CLI cannot — does this project's own state hold the provider — is read from the encrypted state.
+    reused = reused_provider(decision["deploy_with"], env)
     run([
         "tofu", f"-chdir={STACK}", "apply", "-input=false", "-auto-approve",
         f"-var=repository={decision['repository']}", f"-var=deploy_with={decision['deploy_with']}",
-        f"-var=oidc_subject_prefix={subject_prefix}",
+        f"-var=oidc_subject_prefix={subject_prefix}", f"-var=github_oidc_provider_arn={reused}",
     ], env=env)
     found = outputs(env)
     variables = {name: str(found[output]) for name, output in VARIABLES.items()}

@@ -94,7 +94,9 @@ What it does, in order:
    `/<project>/bootstrap/state-passphrase`; afterwards it reads that back, unless `TF_VAR_state_passphrase`
    is set. Keep the printed copy in a password manager anyway: an account that is closed takes the
    parameter with it. Nothing but a later `make bootstrap` ever needs it.
-3. Applies `bootstrap/`. On GitHub the pipeline will sign in with a short-lived OIDC token and no stored
+3. Applies `bootstrap/`. An account holds one GitHub OIDC provider, so where the account already has one —
+   a second project in the same account — it is reused rather than created again, and never owned: tearing
+   one project down leaves every other's trust standing. On GitHub the pipeline will sign in with a short-lived OIDC token and no stored
    credential; the trust names this repository and nothing else, spelled the way GitHub spells it in the
    token — the script asks the repository's OIDC customization endpoint for the `sub` prefix, since a
    repository created after 15 July 2026 is `repo:owner@<id>/name@<id>` rather than `repo:owner/name` —
