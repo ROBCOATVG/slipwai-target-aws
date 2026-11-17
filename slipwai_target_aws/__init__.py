@@ -98,7 +98,11 @@ WORKFLOW = {'cli': '      - run: |\n'
     'registry_login': '      - uses: aws-actions/amazon-ecr-login@v2\n',
     'environment': '  AWS_REGION: ${{ vars.AWS_REGION }}\n'
                    '  TOFU_STATE_BUCKET: ${{ vars.TOFU_STATE_BUCKET }}\n'
-                   '  IMAGE_REGISTRY: ${{ vars.IMAGE_REGISTRY }}\n'}
+                   '  IMAGE_REGISTRY: ${{ vars.IMAGE_REGISTRY }}\n',
+    # The variable whose absence means `make bootstrap` has not pointed this repository at an account yet:
+    # the deploy role is what every job becomes, by OIDC on GitHub or with the stored key elsewhere. A keel
+    # that reads `configured` skips the deploy pipeline whole until it is set; an older keel ignores the key.
+    'configured': 'AWS_DEPLOY_ROLE_ARN'}
 
 #: The nouns the README's *Production* section is written round.
 SECTION_WORDS = {'runtime': 'one ECS service per application deployed blue/green\nbehind its own load balancer',
