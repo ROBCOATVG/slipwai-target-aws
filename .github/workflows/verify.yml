@@ -52,11 +52,15 @@ jobs:
   # `.package-sources` is a second checkout of the same pinned commit because `package_sources` reads its
   # siblings out of a source checkout and verifies that checkout's own `git rev-parse HEAD` against the
   # declared SHA — it cannot take them from the tree it is writing into.
+  # The keel this job builds against is `ROBCOATVG/slipwai`, pinned by commit. It was `slipwai_v2_Fork`,
+  # whose last commit is older than the published languages: typescript 1.2.1 imports `FRONTENDS_DIRECTORY`
+  # from the keel's `npm_workspace`, which that fork never had, so every run failed installing it. Move the
+  # pin when a published language needs a newer keel.
   stacks:
     runs-on: ubuntu-latest
     env:
-      PACKAGE_SOURCES_REPOSITORY: ROBCOATVG/slipwai_v2_Fork
-      PACKAGE_SOURCES_REF: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+      PACKAGE_SOURCES_REPOSITORY: ROBCOATVG/slipwai
+      PACKAGE_SOURCES_REF: 'cf4815591a6cc10e36000e63034c7447759a52c8'
       PACKAGE_SOURCES_NAMES: 'azure'
       PACKAGE_UNDER_TEST: aws
       SLIPWAI_LANGUAGES: ${{ github.workspace }}/keel/packages
@@ -66,15 +70,17 @@ jobs:
           path: package
       - uses: actions/checkout@v6
         with:
-          repository: ROBCOATVG/slipwai_v2_Fork
-          ref: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+          repository: ROBCOATVG/slipwai
+          ref: 'cf4815591a6cc10e36000e63034c7447759a52c8'
           path: keel
       - uses: actions/checkout@v6
         with:
-          repository: ROBCOATVG/slipwai_v2_Fork
-          ref: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+          repository: ROBCOATVG/slipwai
+          ref: 'cf4815591a6cc10e36000e63034c7447759a52c8'
           path: .package-sources
           persist-credentials: false
+          # The keel holds its targets as submodules, so the sibling is only in a checkout that fetches them.
+          submodules: true
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
