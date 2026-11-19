@@ -75,6 +75,9 @@ jobs:
           ref: 'ac040489769deacd88a21fe33e996fd3ee100eef'
           path: .package-sources
           persist-credentials: false
+          # The cloud targets are submodules of the keel's repository at this commit, and the sibling is
+          # read out of this checkout, so it has to bring them.
+          submodules: true
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
