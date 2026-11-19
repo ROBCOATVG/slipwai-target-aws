@@ -7,6 +7,8 @@ written is `changelog.d/`.
 
 **CI proves this package against slipwai itself.** Its workflow installed the keel, called the shared release workflow and took the cloud target sources from `ROBCOATVG/slipwai_v2_Fork`, a fork archived on 2026-10-17 and 244 commits behind `ROBCOATVG/slipwai`. All of them now come from `ROBCOATVG/slipwai`; where a commit is pinned, it is the same commit, which both repositories hold. Nothing the package does in a project changes.
 
+**CI's keel moves from 2026-10-12 (`18505e8d`) to 2026-10-23 (`ac040489`).** The `stacks` job generates a real project with the published TypeScript language, and TypeScript 1.2.1 needs a keel newer than the one pinned here (`FRONTENDS_DIRECTORY`), so the job had failed on `main` since 2026-11-18. `ac040489` is the commit TypeScript 1.2.1 is itself proved against.
+
 ## 1.3.0 — MINOR
 
 **A project pushed before its account is ready keeps a green trunk.** `deploy.yml` started on every push to

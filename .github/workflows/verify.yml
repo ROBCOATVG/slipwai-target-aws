@@ -19,7 +19,7 @@ jobs:
   conformance:
     permissions:
       contents: write
-    uses: ROBCOATVG/slipwai/.github/workflows/package.yml@18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b
+    uses: ROBCOATVG/slipwai/.github/workflows/package.yml@ac040489769deacd88a21fe33e996fd3ee100eef
     with:
       package: aws
       kind: target
@@ -27,7 +27,7 @@ jobs:
       matrix: false
       toolchains: ''
       channel: 'ROBCOATVG/slipwai-index'
-      keel: 'git+https://github.com/ROBCOATVG/slipwai@18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+      keel: 'git+https://github.com/ROBCOATVG/slipwai@ac040489769deacd88a21fe33e996fd3ee100eef'
     secrets:
       chandlery_token: ${{ secrets.CHANDLERY_TOKEN }}
 
@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PACKAGE_SOURCES_REPOSITORY: ROBCOATVG/slipwai
-      PACKAGE_SOURCES_REF: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+      PACKAGE_SOURCES_REF: 'ac040489769deacd88a21fe33e996fd3ee100eef'
       PACKAGE_SOURCES_NAMES: 'azure'
       PACKAGE_UNDER_TEST: aws
       SLIPWAI_LANGUAGES: ${{ github.workspace }}/keel/packages
@@ -67,12 +67,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: ROBCOATVG/slipwai
-          ref: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+          ref: 'ac040489769deacd88a21fe33e996fd3ee100eef'
           path: keel
       - uses: actions/checkout@v6
         with:
           repository: ROBCOATVG/slipwai
-          ref: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+          ref: 'ac040489769deacd88a21fe33e996fd3ee100eef'
           path: .package-sources
           persist-credentials: false
       - uses: actions/setup-python@v6
