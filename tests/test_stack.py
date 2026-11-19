@@ -133,7 +133,7 @@ class AwsStackTest(FactoryTestCase):
                 ],
                 cwd=maximal, check=True, capture_output=True,
             )
-            self.assertEqual((maximal / "infra/service/rds.tf").read_text(encoding="utf-8"), "")
+            self.assertFalse((maximal / "infra/service/rds.tf").exists(), "a pruned region\'s file is removed, not left empty")
             self.assertNotIn("backing-service:postgres",
                 (maximal / "infra/service/main.tf").read_text(encoding="utf-8"))
             self.validate(maximal / "infra/service")
