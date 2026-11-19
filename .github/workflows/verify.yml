@@ -19,7 +19,7 @@ jobs:
   conformance:
     permissions:
       contents: write
-    uses: ROBCOATVG/slipwai_v2_Fork/.github/workflows/package.yml@18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b
+    uses: ROBCOATVG/slipwai/.github/workflows/package.yml@7beb78a74282bafbc7b0fca505bcb0151499318c
     with:
       package: aws
       kind: target
@@ -27,7 +27,7 @@ jobs:
       matrix: false
       toolchains: ''
       channel: 'ROBCOATVG/slipwai-index'
-      keel: 'git+https://github.com/ROBCOATVG/slipwai_v2_Fork@18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+      keel: 'git+https://github.com/ROBCOATVG/slipwai@7beb78a74282bafbc7b0fca505bcb0151499318c'
     secrets:
       chandlery_token: ${{ secrets.CHANDLERY_TOKEN }}
 
@@ -55,8 +55,8 @@ jobs:
   stacks:
     runs-on: ubuntu-latest
     env:
-      PACKAGE_SOURCES_REPOSITORY: ROBCOATVG/slipwai_v2_Fork
-      PACKAGE_SOURCES_REF: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+      PACKAGE_SOURCES_REPOSITORY: ROBCOATVG/slipwai
+      PACKAGE_SOURCES_REF: '7beb78a74282bafbc7b0fca505bcb0151499318c'
       PACKAGE_SOURCES_NAMES: 'azure'
       PACKAGE_UNDER_TEST: aws
       SLIPWAI_LANGUAGES: ${{ github.workspace }}/keel/packages
@@ -66,15 +66,18 @@ jobs:
           path: package
       - uses: actions/checkout@v6
         with:
-          repository: ROBCOATVG/slipwai_v2_Fork
-          ref: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+          repository: ROBCOATVG/slipwai
+          ref: '7beb78a74282bafbc7b0fca505bcb0151499318c'
           path: keel
       - uses: actions/checkout@v6
         with:
-          repository: ROBCOATVG/slipwai_v2_Fork
-          ref: '18505e8de8fd0bf0f0fa7077bc6ea4a7a5f82d3b'
+          repository: ROBCOATVG/slipwai
+          ref: '7beb78a74282bafbc7b0fca505bcb0151499318c'
           path: .package-sources
           persist-credentials: false
+          # The cloud targets are submodules of the keel's repository at this commit, and the sibling is
+          # read out of this checkout, so it has to bring them.
+          submodules: true
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
